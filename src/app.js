@@ -23,4 +23,11 @@ app.use(express.static("public"))
 
 app.use(cookieParser())
 
+//routes import, for seggregation, use .js always
+import userRouter from './routes/user.routes.js'
+
+//routes declaration, since routes are defined in separate place, have to use middleware
+// http://localhost:8000/api/v1/users/register
+app.use("/api/v1/users", userRouter)
+
 export { app } 

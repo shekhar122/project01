@@ -27,9 +27,9 @@ Now, asyncHandler can be used to wrap asynchronous
 route handlers in Express middleware to handle errors gracefully.
 */ 
 
-
+//higher order function: accepts a function and retun the function
 const asyncHandler = (requestHandler) => {
-    (req, res, next) => {
+    return (req, res, next) => {
         Promise.resolve(requestHandler(req, res, next)).
         catch((err) => next(err))
     } 
