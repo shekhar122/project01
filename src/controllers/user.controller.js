@@ -3,7 +3,7 @@ import {ApiError} from "../utils/ApiError.js";
 import {User} from "../models/user.model.js"
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js";
-
+//console.log("debug: incontroller")
 //create method to register, 
 const registerUser = asyncHandler(async (req, res) => {
     //  res.status(200).json({
@@ -32,10 +32,8 @@ const registerUser = asyncHandler(async (req, res) => {
 
    //data from
    const { fullName, email, username, password } = req.body
-   console.log("fullName: " , fullName);
-//    if (fullName == "") {
-//        throw new ApiError(400, "fullname is required")
-//    }
+   //console.log("debug: body received : ", req.body)
+   //console.log("debug: fullName is " , fullName);
 /*
 >> The .some() method iterates over each element of the array 
 and returns true if at least one element satisfies the provided condition.
@@ -53,7 +51,7 @@ which ensures that the trim() method is only called if field is not null or unde
    }
 
    //to check user exists or not
-   const existedUser = User.findOne({
+   const existedUser = await User.findOne({
     $or: [{ username }, { email }]
    })
 
@@ -61,7 +59,7 @@ which ensures that the trim() method is only called if field is not null or unde
       throw new ApiError(409, "User with email or username already exist")
    }
    //Image and avatar handling
-   /*console.log(req.files)*/
+   //console.log("debug: files we received: ",req.files)
 /*
 >> When handling file uploads in Express.js, middleware like Multer is often used to 
 parse the uploaded files and make them accessible via req.files
@@ -73,15 +71,24 @@ parse the uploaded files and make them accessible via req.files
  avatarLocalPath will contain the path of the uploaded avatar image.
 */
    const avatarLocalPath = req.files?.avatar[0]?.path
-   const coverImageLocalPath = req.files?.coverImage[0]?.path
+   //const coverImageLocalPath = req.files?.coverImage[0]?.path
+   //console.log("debug: avatarLocalPath is ",avatarLocalPath)
+   //console.log("debug: coverImageLocalPath is ",coverImageLocalPath)
+   let coverImageLocalPath;
+   if(req.files && Array.isArray(req.files.coverImage) 
+       && req.files.coverImage.length > 0) {
+          coverImageLocalPath = req.files.coverImage[0].path
+      }
 
    if (!avatarLocalPath) {
       throw new ApiError(400, " Avatar file is required")
    }
    //here it is possible that it will take time while uploading image/video, so using await
-   //wait here till it uploads
+   //wait here till it upload
    const avatar = await uploadOnCloudinary(avatarLocalPath)
    const coverImage =  await uploadOnCloudinary(coverImageLocalPath)
+
+
 
    if(!avatar) {
     throw new ApiError(400, " Avatar file is required")
@@ -90,12 +97,13 @@ parse the uploaded files and make them accessible via req.files
    //creating object for db entry
 
  const user = await User.create({
-    fullname,
-    avatar: avatar.url,
-    coverImage: coverImage?.url || "",  // if cover image is present then send URL else keep it empty
-    email,
-    password,
-    username: username.toLowerCase()
+   fullName,
+   avatar: avatar.url,
+   coverImage: coverImage?.url || "", // if cover image is present then send URL else keep it empty
+   email, 
+   password,
+   username: username.toLowerCase()
+    
 })
 //mongodb add _id with every entry
 //what we don't want
@@ -107,7 +115,6 @@ if(!createdUser) {
 }
 
 //send res
-
 return res.status(201).json(
     new ApiResponse(200, createdUser, "User registered successfully")
 )
