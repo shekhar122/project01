@@ -12,6 +12,10 @@ const userSchema = new Schema(
             trim: true,
             index: true
         },
+        Phone: {
+            type: Number,
+            required: true
+        },
         email: {
             type: String,
             required: true,
@@ -65,22 +69,24 @@ userSchema.methods.isPasswordCorrect = async function(password) {
 }
 
 //both are JWT token
-userSchema.methodsgenerateAccessToken = function() {
+userSchema.methods.generateAccessToken = function() {
+    //console.log("debug: In generateAccessToken payload :",this._id, this.email,
+    //                        this.username, this.fullName)
     return jwt.sign(
         {
             //payloadName: database field
             _id: this._id,
             email: this.email,
             username: this.username,
-            fullname: this.fullname,
+            fullName: this.fullName,
         },
         process.env.ACCESS_TOKEN_SECRET,
         {
-            expiration: process.env.ACCESS_TOKEN_EXPIRY
+            expiresIn: process.env.ACCESS_TOKEN_EXPIRY
         }
     )
 }
-userSchema.methodsgenerateAccessToken = function() {
+userSchema.methods.generateRefreshToken = function() {
     return jwt.sign(
         {
             //payloadName: database field
@@ -88,7 +94,7 @@ userSchema.methodsgenerateAccessToken = function() {
         },
         process.env.REFRESH_TOKEN_SECRET,
         {
-            expiration: process.env.REFRESH_TOKEN_EXPIRY
+            expiresIn: process.env.REFRESH_TOKEN_EXPIRY
         }
     )
 }

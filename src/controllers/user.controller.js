@@ -3,7 +3,29 @@ import {ApiError} from "../utils/ApiError.js";
 import {User} from "../models/user.model.js"
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js";
+import jwt from "jsonwebtoken"
 //console.log("debug: incontroller")
+
+//asyncHandler not needed here because we are not handling web requests here, it's internal
+const generateAccessTokenAndRefreshToken = async(userID) => {
+   try {
+      //console.log("debug: userID received ",userID);
+      const user = await User.findById(userID)
+      //console.log("debug: User is: ", user);
+      const accessToken = user.generateAccessToken()
+      const refreshToken = user.generateRefreshToken()
+
+      //send the accessToken and save refreshToken in database
+      user.refreshToken = refreshToken
+      //here in this save method we need to set validation to fasle so that
+      //it will not check for other fields
+      await user.save({validateBeforeSave: false})
+
+      return {accessToken, refreshToken}
+   } catch (error) {
+      throw new ApiError(500, "Something went wrong while generating access and refresh Token")
+   }
+}
 //create method to register, 
 const registerUser = asyncHandler(async (req, res) => {
     //  res.status(200).json({
@@ -31,7 +53,7 @@ const registerUser = asyncHandler(async (req, res) => {
    //data from URL (taken care letter)
 
    //data from
-   const { fullName, email, username, password } = req.body
+   const { fullName, email, Phone, username, password } = req.body
    //console.log("debug: body received : ", req.body)
    //console.log("debug: fullName is " , fullName);
 /*
@@ -44,19 +66,19 @@ which ensures that the trim() method is only called if field is not null or unde
  the condition in the if statement evaluates to true.
 */
    if (
-      [fullName, email, username, password].some((field) => 
+      [fullName, email, Phone, username, password].some((field) => 
       field?.trim() === "")
    ) {
-    throw new ApiError(400, "fullname is required")
+    throw new ApiError(400, "fullName and other fields are required")
    }
 
    //to check user exists or not
    const existedUser = await User.findOne({
-    $or: [{ username }, { email }]
+    $or: [{ Phone }, { email }]
    })
 
    if (existedUser) {
-      throw new ApiError(409, "User with email or username already exist")
+      throw new ApiError(409, "User with Phone or email already exist")
    }
    //Image and avatar handling
    //console.log("debug: files we received: ",req.files)
@@ -102,6 +124,7 @@ parse the uploaded files and make them accessible via req.files
    coverImage: coverImage?.url || "", // if cover image is present then send URL else keep it empty
    email, 
    password,
+   Phone,
    username: username.toLowerCase()
     
 })
@@ -118,8 +141,163 @@ if(!createdUser) {
 return res.status(201).json(
     new ApiResponse(200, createdUser, "User registered successfully")
 )
+})
+//TODOs for login
+/* 
+1. user enters the username and password
+2. we will check with database
+3. if correct we will allow him and create a accessToken
+4. if failed we will send the error message
+//by hitesh
+1. get req->body
+2. username or email
+3. find the user
+4. if exists password check
+5. if match access and refresh token 
+6. send cookies
+7. send success message
+*/
+const loginUser = asyncHandler(async (req, res) => {
+   const {email, Phone, username, password} = req.body
+   //console.log("debug: req.body: ",req.body)
+   //TODO: we are going aheah with phone Number
+   if(!username && !email) {//if both not received then throw error
+      throw new ApiError(400, "username or email is required")
+   }
+   // check if user is present in DB (mongodb)
+   const user = await User.findOne({
+      $or: [{username}, {email}]
+   })
+   //if user not present throw error
+   if (!user) {
+      throw new ApiError(404, "User doesn't exits")
+   }
+   // User gives us the function via mongoose
+   // and the function which are created by us are accessed via user which we got 
+   //if user exists and we got the email and pass, now check pass in db
+   const isPasswordValid = await user.isPasswordCorrect(password)
+   console.log("debug: isPasswordValid ", isPasswordValid)
+   if (!isPasswordValid) {
+      throw new ApiError(404, "Password is not correct")
+   }
+   //create access and Refresh Token
+   const {accessToken, refreshToken} = await  generateAccessTokenAndRefreshToken(user._id)
+   //console.log("debug: accessToken ", accessToken);
+   //console.log("debug: refreshToken", refreshToken);
 
-   //file handling
+   //what all information we need to send to user
+   /*
+   we have the user access, we can send it directly. when we fetched user by User.findOne we got
+   some unwanted feilds like password. refreshToken in user is empty. we can update with later 
+   object or we can go ahead with one db query
+   */
+  const loggedInUser = await User.findById(user._id).
+  select("-password -refreshToken")
+
+  //console.log("debug: loggedInUser ", loggedInUser);
+  const options = {
+   httpOnly: true,  //by default cookies can be modified by anyone but when we set these vars true
+   secure: true   // then can be modified by servers only not by frontend
+  }
+
+  return res
+  .status(200)
+  .cookie("accessToken", accessToken, options)
+  .cookie("refreshToken", refreshToken, options)
+  .json(
+     new ApiResponse(
+      200,
+      {
+         user: loggedInUser, accessToken, refreshToken
+      },
+      "User logged In successfully"
+     )
+  )
+  
 })
 
-export {registerUser}
+const logoutUser = asyncHandler(async(req, res) => {
+  await User.findByIdAndUpdate(
+      req.user._id,
+      //now we have to tell him what to update
+      //we have to use mongofb operator
+      {
+         $set: {
+            refreshToken: undefined
+         }
+      },
+      {
+         new: true
+      }
+
+   )
+   const options = {
+      httpOnly: true,  //by default cookies can be modified by anyone but when we set these vars true
+      secure: true   // then can be modified by servers only not by frontend
+     }
+   return res
+   .status(200)
+   .clearCookie("accessToken", options)
+   .clearCookie("refreshToken", options)
+   .json(
+      new ApiResponse(
+       200, {},
+       "User logged out successfully"
+      )
+   )
+})
+
+const refreshAccessToken = asyncHandler( async(req, res) => {
+   const incomingRefreshToken = req.cookies.refreshToken
+                            || req.body.refreshToken
+   if (incomingRefreshToken) {
+      throw new ApiError(401, "unauthorized request")
+   }
+
+   try {
+      //verify through jwt
+      const decodedToken = jwt.verify(
+         incomingRefreshToken,
+         process.env.REFRESH_TOKEN_SECRET
+      )
+   
+      const user = await User.findById(decodedToken?._id)
+      if (!user) {
+         throw new ApiError(401, "Invalid Refresh Token")
+      }
+   
+      //match the incoming refresh and saved refresh token
+      if(incomingRefreshToken !== user?.refreshToken) {
+         throw new ApiError(401, "Refresh token is expired or used")
+      }
+      //now generate new Access and Refresh Token
+      const options = {
+         httpOnly: true,
+         secure: true
+      }
+      const {accessToken, newRefreshToken} = await generateAccessTokenAndRefreshToken(user._id)
+   
+      return res
+      .status(200)
+      .clearCookie("accessToken", accessToken, options)
+      .clearCookie("refreshToken", newRefreshToken, options)
+      .json(
+         new ApiResponse(
+            200,
+            {accessToken, refreshToken: newRefreshToken},
+            "Access token refreshed"
+         )
+      )
+   } catch (error) {
+      throw new ApiError(401, error?.message ||
+         "Invalid refresh token")
+   }
+})
+
+
+export {
+   registerUser,
+   loginUser,
+   logoutUser,
+   refreshAccessToken
+}
