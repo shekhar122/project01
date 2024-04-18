@@ -250,7 +250,7 @@ const logoutUser = asyncHandler(async(req, res) => {
 const refreshAccessToken = asyncHandler( async(req, res) => {
    const incomingRefreshToken = req.cookies.refreshToken
                             || req.body.refreshToken
-   if (incomingRefreshToken) {
+   if (!incomingRefreshToken) {
       throw new ApiError(401, "unauthorized request")
    }
 
@@ -294,10 +294,125 @@ const refreshAccessToken = asyncHandler( async(req, res) => {
    }
 })
 
+const changeCurrentPasssword = asyncHandler(async(req, res) => {
+   const {oldPassword, newPassword} = req.body
+
+   const user = await User.findById(req?._id)
+
+   //use the function defined in user model file
+   //and since this function is async, we need to use await
+   const isPasswordCorrect = await user.isPasswordCorrect(oldPassword)
+
+   if(!isPasswordCorrect) {
+      throw new ApiError(400, "invalid old password")
+   }
+   //here it is set only
+   user.password = newPassword
+   //save it and don't want to validate other fields
+   await user.save({validateBeforeSave: false})
+
+   return res
+   .status(200)
+   .json(new ApiResponse(200, {}, "Password changed successfully"))
+})
+
+const getCurrentUser = asyncHandler(async(req, res) => {
+   return res
+   .status(200)
+   .json(200, req.user, "current user fetched successfully")
+})
+//controller to update text based data
+const updateAccountDetails = asyncHandler(async(req, res) => {
+   const {fullName, email} = req.body
+
+   if(!fullName || !email) {
+      throw new ApiError(400, " All fields required")
+   }
+
+   const user = User.findByIdAndUpdate(
+      req.user?._id,
+      {
+        $set: {
+         fullName,
+         email
+        }
+      },
+      {new: true}
+   ).select("-password")
+
+   return res
+   .status(200)
+   .json(new ApiResponse(200, user, "Account details updated successfully"))
+})
+//controller to update files based data
+/* 
+- we need to think about middleware
+- first middleware should be multer so that we can accept files from authorized user
+- only logged In user can update 
+*/
+
+const updateUserAvatar = asyncHandler (async(req, res) => {
+   const avatarLocalPath = req.file?.path
+   if (!avatarLocalPath) {
+      throw new ApiError(400, "Avatar file is missing")
+   }
+   const avatar = await  uploadOnCloudinary(avatarLocalPath)
+   if(!avatar.url) {
+      throw new ApiError(400, "error while uploading avatar on cloudinary")
+   }
+
+   //update in database
+   const user = await User.findByIdAndUpdate(
+      req.user?._id,
+      {
+         $set: {
+            avatar: avatar.url
+         }
+      },
+      {new: true}
+   ).select("-password")
+
+   return res.
+   status(200)
+   .json(new ApiResponse(200, user, "Avatar updated successfully"))
+
+})
+
+const updateCoverImage = asyncHandler (async(req, res) => {
+   const coverImageLocalPath = req.file?.path
+   if (!coverImageLocalPath) {
+      throw new ApiError(400, "Cover Image file is missing")
+   }
+   const coverImage = await  uploadOnCloudinary(coverImageLocalPath)
+   if(!coverImage.url) {
+      throw new ApiError(400, "error while uploading Cover image on cloudinary")
+   }
+
+   //update in database
+   const user = await User.findByIdAndUpdate(
+      req.user?._id,
+      {
+         $set: {
+            coverImage: coverImage.url
+         }
+      },
+      {new: true}
+   ).select("-password")
+
+   return res.
+   status(200)
+   .json(new ApiResponse(200, user, "Cover Image updated successfully"))
+})
+
 
 export {
    registerUser,
    loginUser,
    logoutUser,
-   refreshAccessToken
+   refreshAccessToken,
+   changeCurrentPasssword,
+   getCurrentUser,
+   updateAccountDetails,
+   updateUserAvatar,
+   updateCoverImage
 }
